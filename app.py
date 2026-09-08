@@ -16,7 +16,7 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# ----------------- SESSION PERSISTENCE & ADAPTIVE TRACKING -----------------
+# ----------------- SESSION PERSISTENCE & TRACKING -----------------
 if "xp" not in st.session_state:
     st.session_state.xp = 0
 if "streak" not in st.session_state:
@@ -35,47 +35,62 @@ if "feedback" not in st.session_state:
     st.session_state.feedback = None
 if "start_time" not in st.session_state:
     st.session_state.start_time = time.time()
+if "chat_messages" not in st.session_state:
+    st.session_state.chat_messages = [
+        {
+            "role": "assistant",
+            "content": "Kia ora! I am your CAA Numeracy Coach. Ask me how to calculate anything, or ask me to explain a step!",
+        }
+    ]
 
-# ----------------- LESSON FLASHCARDS -----------------
+# ----------------- FLASHCARDS WITH BOLD EQUATIONS -----------------
 LESSONS = {
     "Percentages & Traps": """
-    **⚡ Quick Flashcard:**
-    * **Discounts:** $\\text{Percent Off} = (\\text{Saving} \\div \\text{Original}) \\times 100$.
-    * **The Trap:** Buy 1 get 2nd half-price = **25% saving on total, NEVER 50%!**
+    ### 📓 COPY INTO YOUR NOTEBOOK:
+    * **Finding Percentage Discount:** **Percent Off = (Discount ÷ Original Price) × 100**[cite: 1, 2, 3]
+    * **15% GST Rule:** **Total Price = Price × 1.15** (or **Price + [Price × 0.15]**)
+    * **The Two-Pair Trap:** Buy one pair, get 2nd half price = **You save 25% on the total purchase, NOT 50%!**[cite: 2, 3]
     """,
     "Speed, Distance & Time": """
-    **⚡ Quick Flashcard:**
-    * $\\text{Distance} = \\text{Speed} \\times \\text{Time}$ | $\\text{Speed} = \\text{Distance} \\div \\text{Time}$
-    * $\\text{km/h to m/min:} \\times 1,000 \\text{ then } \\div 60$.
-    * **Decimal Time Trap:** $2.5\\text{ hrs} = 150\\text{ mins}$ (Base 60, not 2 hrs 50 mins!).
+    ### 📓 COPY INTO YOUR NOTEBOOK:
+    * **Distance Equation:** **Distance = Speed × Time**
+    * **Speed Equation:** **Speed = Distance ÷ Time**
+    * **Time Equation:** **Time = Distance ÷ Speed**
+    * **Speed Conversion:** **Metres per min = (Speed in km/h × 1,000) ÷ 60**[cite: 1, 2, 3]
+    * **Base-60 Time Trap:** Time is NOT out of 100!
+      * **2.5 hours = 2 hours and 30 minutes = 150 minutes** (NEVER 2 hours 50 minutes!)[cite: 1]
+      * **2.25 hours = 2 hours and 15 minutes = 135 minutes**
     """,
-    "Mass & Capacity (kg/g, L/mL)": """
-    **⚡ Quick Flashcard:**
-    * $1\\text{ kg} = 1,000\\text{ g}$ | $1\\text{ Litre} = 1,000\\text{ mL}$
-    * $\\text{Price per kg:} \\text{Cost} = (\\text{Grams} \\div 1,000) \\times \\text{Price/kg}$.
+    "Mass & Capacity (kg, g, L, mL)": """
+    ### 📓 COPY INTO YOUR NOTEBOOK:
+    * **Mass Conversion:** **1 kg = 1,000 g**
+      * **kg to g:** Multiply by 1,000 (**kg × 1,000 = g**)
+      * **g to kg:** Divide by 1,000 (**g ÷ 1,000 = kg**)
+    * **Price Per Kilogram:** **Cost = (Grams ÷ 1,000) × Price per kg**[cite: 1, 2, 3]
+    * **Capacity Conversion:** **1 Litre = 1,000 mL**[cite: 1, 2, 3]
+    * **Liquid Servings:** **Total Litres Needed = (People × mL per person) ÷ 1,000**[cite: 1, 2, 3]
     """,
-    "Agree / Disagree Evidence (Outcome 3)": """
-    **⚡ Quick Flashcard:**
-    * **Rule 1:** State your stance clearly (Agree, Disagree, or Unsure).
-    * **Rule 2:** You MUST quote at least two exact numbers or percentages from the problem.
+    "Outcome 3 Claims (Agree/Disagree)": """
+    ### 📓 COPY INTO YOUR NOTEBOOK:
+    * **Rule 1 (Position):** Start with **"I agree"** or **"I disagree"**[cite: 2, 3].
+    * **Rule 2 (Numerical Proof):** Quote at least **two exact numbers, frequencies, or percentages** from the data[cite: 1, 2, 3].
+    * **Rule 3 (Comparison):** Show the math comparison (e.g., **"59 out of 100 is 59%, which is greater than half (50%)"**)[cite: 2, 3].
     """,
 }
 
-# ----------------- ADAPTIVE AI ENGINE -----------------
+# ----------------- ADAPTIVE AI PROMPT -----------------
 SYSTEM_PROMPT = """
 You are an adaptive AI examiner for the NCEA Numeracy CAA (Unit Standard 32406).
-Your goal is to gamify math for learners with short attention spans.
+Generate authentic Level 4/5 questions matching the 2026 examination paper.
 
-TOPICS TO CYCLE THROUGH:
-1. Mass & Unit Rates ($/kg, kg <-> g, meat budgets)
-2. Speed, Distance & Time (km/h to m/min, decimal time traps like 2.5 hrs = 150 min)
-3. Capacity & Volumes (serving 27 people with multiple bottle sizes)
-4. Outcome 3 Claims (Agree/Disagree statements with tables or graph frequencies)
-
-CRITICAL INSTRUCTIONS:
-- Adaptability: If the learner struggled with previous topics, explicitly generate a problem on that concept with fresh numbers.
-- Math Symbols: Always format arithmetic with "×" and "÷". NEVER use "*" or "/".
-- Style: Punchy, high-energy, direct language.
+IMPORTANT INSTRUCTIONS:
+1. EQUATION FORMATTING:
+   - EVERY equation, arithmetic formula, and calculation MUST BE IN BOLD (e.g. **15 × 1,000 = 15,000**, **15,000 ÷ 60 = 250 m**).
+   - Use standard school symbols: "×" for multiplication and "÷" for division. NEVER use "*" or "/".
+2. NOTEBOOK HIGHLIGHT:
+   - Create a punchy "notebook_rule" field containing the exact bold equation that the learner must copy into their notebook.
+3. ADAPTABILITY:
+   - If weak topics are provided, make a targeted problem testing that concept with fresh numbers.
 
 OUTPUT FORMAT:
 Return strictly a valid JSON object with no markdown fences, backticks, or extra commentary:
@@ -83,13 +98,14 @@ Return strictly a valid JSON object with no markdown fences, backticks, or extra
   "topic": "Topic Name",
   "is_targeted_weakness": true,
   "requires_working": false,
-  "scenario_data": "Short table, numbers, or frequency context",
+  "scenario_data": "Short table, graph numbers, or frequency context",
   "question": "Clear, engaging problem text",
-  "plain_english": "1-sentence plain-English translation of what to do",
+  "plain_english": "1-sentence plain-English breakdown of what to do",
+  "notebook_rule": "The exact bold equation or rule to write down (e.g. **Metres per min = (km/h × 1,000) ÷ 60**)",
   "expected_answer": "Target answer or criteria",
-  "hint_1": "Step 1: Formula or initial conversion",
-  "hint_2": "Step 2: Arithmetic setup with × or ÷",
-  "solution": "Full working showing step-by-step arithmetic with × and ÷"
+  "hint_1": "Step 1: Formula or initial conversion with bold equations",
+  "hint_2": "Step 2: Arithmetic setup with bold equations",
+  "solution": "Full working showing step-by-step arithmetic in BOLD using × and ÷"
 }
 """
 
@@ -106,8 +122,8 @@ def generate_adaptive_problem():
     Recent errors: {st.session_state.mistake_history[-2:] if st.session_state.mistake_history else 'None'}.
     
     If weak areas exist, generate a targeted remediation problem on that skill with new numbers.
-    Otherwise, choose a high-frequency CAA question from the topics list.
-    Vary 'requires_working' (True for claims/equations, False for quick calculations).
+    Otherwise, choose a high-frequency CAA question (Mass/Rates, Speed/Time, Capacity, or Outcome 3 Claims).
+    Ensure all equations and mathematical formulas are strictly in BOLD with '×' and '÷'.
     """
 
     try:
@@ -127,13 +143,12 @@ def generate_adaptive_problem():
 
 
 # ----------------- UI / GAMIFICATION BAR -----------------
-# 30-Minute Run Timer calculation
 elapsed_mins = int((time.time() - st.session_state.start_time) / 60)
 mins_left = max(0, 30 - elapsed_mins)
 
 st.markdown("## ⚡ NCEA CAA: Speed-Run Arena")
 
-# HUD Bar
+# HUD Metrics
 hcol1, hcol2, hcol3, hcol4, hcol5 = st.columns(5)
 with hcol1:
     st.metric("⏳ 30-Min Run", f"{mins_left}m left")
@@ -157,14 +172,14 @@ with hcol5:
     )
     st.metric("🎖️ Rank", level)
 
-# Weakness radar tracker
+# Weakness Radar Tracker
 if st.session_state.struggling_topics:
     st.info(
-        f"🎯 **AI Adaptation Radar:** Active drills queued for: **{', '.join(set(st.session_state.struggling_topics))}**"
+        f"🎯 **AI Adaptation Radar:** Targeting past errors: **{', '.join(set(st.session_state.struggling_topics))}**"
     )
 
-# Lesson Flashcards Accordion
-with st.expander("⚡ 10-Second Formula Flashcards (Click to Open)"):
+# Lesson Flashcards with bold notebook headers
+with st.expander("📓 View Notebook Formula Sheets (Click to Open)"):
     tab1, tab2, tab3, tab4 = st.tabs(list(LESSONS.keys()))
     for tab, (name, content) in zip([tab1, tab2, tab3, tab4], LESSONS.items()):
         with tab:
@@ -172,8 +187,8 @@ with st.expander("⚡ 10-Second Formula Flashcards (Click to Open)"):
 
 st.divider()
 
-# ----------------- MAIN STAGE -----------------
-col_main, col_guide = st.columns([1.3, 1])
+# ----------------- MAIN LAYOUT: ARENA + CHATBOT -----------------
+col_main, col_chat = st.columns([1.3, 1])
 
 with col_main:
     if st.button("🚀 Spawn Next Challenge") or st.session_state.scenario is None:
@@ -182,12 +197,24 @@ with col_main:
     sc = st.session_state.scenario
     if sc:
         if sc.get("is_targeted_weakness"):
-            st.warning("🔁 **Adaptive Rematch:** Re-targeting a past mistake!")
+            st.warning("🔁 **Adaptive Rematch:** Re-targeting your past mistake!")
 
         st.caption(f"**Focus Strand:** {sc.get('topic', 'CAA Practice')}")
 
+        # Big Visual Notebook Box for Students
+        if sc.get("notebook_rule"):
+            st.markdown(
+                f"""
+            <div style="background: rgba(251, 191, 36, 0.15); border: 2px dashed #fbbf24; border-radius: 8px; padding: 12px; margin-bottom: 14px;">
+                <span style="font-weight: 800; color: #fbbf24;">📓 WRITE THIS IN YOUR NOTEBOOK:</span><br>
+                <span style="font-size: 1.05rem; color: #fff;">{sc.get('notebook_rule')}</span>
+            </div>
+            """,
+                unsafe_allow_html=True,
+            )
+
         if sc.get("scenario_data"):
-            st.info(f"📊 **Data Stimulus:**\n{sc.get('scenario_data')}")
+            st.info(f"📊 **Data Context:**\n{sc.get('scenario_data')}")
 
         st.markdown(f"### {sc.get('question')}")
         st.markdown(
@@ -224,7 +251,7 @@ with col_main:
             {{
                "is_correct": true/false,
                "verdict": "Punchy 1-sentence assessment",
-               "working": "Clear step-by-step arithmetic using '×' and '÷'"
+               "working": "Clear step-by-step arithmetic with ALL EQUATIONS IN BOLD using '×' and '÷'"
             }}
             """
             eval_res = client.models.generate_content(
@@ -243,7 +270,6 @@ with col_main:
                 st.session_state.xp += gain
                 st.session_state.solved += 1
 
-                # Clear mastered topic from weak list
                 topic = sc.get("topic")
                 if topic in st.session_state.struggling_topics:
                     st.session_state.struggling_topics.remove(topic)
@@ -267,20 +293,62 @@ with col_main:
                 )
             else:
                 st.error(
-                    f"❌ **{fb.get('verdict')}**\n\n**Correct Working:**\n{fb.get('working')}"
+                    f"❌ **{fb.get('verdict')}**\n\n**Correct Equations & Working:**\n{fb.get('working')}"
                 )
 
-with col_guide:
-    st.markdown("### 🤖 Instant AI Copilot")
-    if sc:
-        if st.session_state.hint_level >= 1:
-            st.warning(f"**Step 1:** {sc.get('hint_1')}")
-        if st.session_state.hint_level >= 2:
-            st.warning(f"**Step 2:** {sc.get('hint_2')}")
-        if st.session_state.hint_level >= 3:
-            st.success(f"**Solution:** {sc.get('solution')}")
+        # Progressive Hints
+        with st.expander("💡 Need Step-by-Step Help? (No penalty)"):
+            if st.session_state.hint_level >= 1:
+                st.warning(f"**Step 1:** {sc.get('hint_1')}")
+            if st.session_state.hint_level >= 2:
+                st.warning(f"**Step 2:** {sc.get('hint_2')}")
+            if st.session_state.hint_level >= 3:
+                st.success(f"**Full Working:** {sc.get('solution')}")
 
-        if st.session_state.hint_level < 3:
-            if st.button("💡 Grab a Hint (No penalty)"):
-                st.session_state.hint_level += 1
-                st.rerun()
+            if st.session_state.hint_level < 3:
+                if st.button("Unlock Next Step"):
+                    st.session_state.hint_level += 1
+                    st.rerun()
+
+# ----------------- AI CHATBOT COPILOT -----------------
+with col_chat:
+    st.markdown("### 💬 Ask AI Coach")
+    st.caption("Ask questions about equations, formulas, or how to solve steps!")
+
+    chat_box = st.container(height=420)
+    for msg in st.session_state.chat_messages:
+        with chat_box.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    user_query = st.chat_input("Ask: e.g. How do I turn km/h into m/min?")
+    if user_query:
+        st.session_state.chat_messages.append(
+            {"role": "user", "content": user_query}
+        )
+        with chat_box.chat_message("user"):
+            st.markdown(user_query)
+
+        current_q_context = (
+            f"The current problem is: {sc.get('question')} | Data: {sc.get('scenario_data')}"
+            if sc
+            else "General practice"
+        )
+        tutor_prompt = f"""
+        You are a friendly, encouraging NCEA Numeracy tutor for students with low attention spans.
+        Context: {current_q_context}.
+        Student Question: {user_query}
+        
+        RULES:
+        - Format ALL equations, formulas, and numbers in **BOLD**.
+        - Always use '×' and '÷'. Never use '*' or '/'.
+        - Keep answers short, direct (under 3-4 bullet points), and tell them what to write in their notebook.
+        """
+        bot_res = client.models.generate_content(
+            model="gemini-3.6-flash", contents=tutor_prompt
+        )
+        reply = bot_res.text
+        st.session_state.chat_messages.append(
+            {"role": "assistant", "content": reply}
+        )
+        with chat_box.chat_message("assistant"):
+            st.markdown(reply)
