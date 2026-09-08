@@ -49,7 +49,7 @@ if "verified" not in st.session_state:
 def generate_new_problem():
     try:
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.6-flash",
             contents="Generate a new randomized CAA Numeracy question.",
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT,
@@ -96,7 +96,7 @@ with col1:
             Be encouraging. Output a 1-sentence verdict followed by the step-by-step calculation.
             """
             eval_res = client.models.generate_content(
-                model="gemini-2.5-flash", contents=verify_prompt
+                model="gemini-3.6-flash", contents=verify_prompt
             )
             st.success(eval_res.text)
 
