@@ -4,7 +4,7 @@ import streamlit as st
 from google import genai
 from google.genai import types
 
-# Page setup for clean embedding
+# Page setup for clean embedding in Google Sites
 st.set_page_config(page_title="CAA Numeracy AI Tutor", layout="wide")
 
 # Read API key securely from Streamlit Secrets
@@ -17,19 +17,21 @@ client = genai.Client(api_key=api_key)
 
 SYSTEM_PROMPT = """
 You are an expert NCEA Numeracy tutor for New Zealand Unit Standard 32406.
-Your role is to create authentic, Level 4/5 everyday math problems matching the 2026 CAA:
-- Contexts: Supermarket budgets ($/kg), gas usage rates, running shoe lifespans, scale drawings, and time intervals.
-- Literacy: Write in simple, clear, direct English. Avoid dense academic paragraphs.
-- JSON Output: You must always output valid JSON with no markdown wrapping.
+Your job is to generate authentic Level 4/5 everyday math problems matching the 2026 CAA paper:
+- Real NZ contexts: Supermarket shopping ($/kg), gas cooker usage rates, running shoe lifespans, scale drawings, and time conversions (hours to minutes).
+- Mathematical Symbols Rule: Always format arithmetic clearly for school students. Use the standard multiplication sign "×" (or "times") instead of "*". Use the standard division sign "÷" (or "divided by") instead of "/".
+- Plain English: Write in direct, welcoming English that struggling readers can understand immediately.
+- JSON Output: You must always output valid JSON with no markdown wrapping or code blocks.
+
 Format:
 {
-  "topic": "Context name (e.g., Supermarket Budget)",
+  "topic": "Context name (e.g. Supermarket Budget)",
   "question": "Clear problem statement with all given values.",
   "plain_english": "A 1-sentence plain translation of what to do.",
-  "expected_answer": "The numerical answer or short unit string",
-  "hint_1": "First step or identification of the formula",
-  "hint_2": "The intermediate calculation setup",
-  "solution": "Full worked solution with arithmetic steps"
+  "expected_answer": "The numerical answer or short unit string (e.g. 14 bees, $25, or 250 m)",
+  "hint_1": "Step 1: Identify the numbers and formula needed",
+  "hint_2": "Step 2: Show the setup calculation with × or ÷",
+  "solution": "Step 3: Full worked solution with complete arithmetic using × and ÷"
 }
 """
 
@@ -47,7 +49,7 @@ if "verified" not in st.session_state:
 def generate_new_problem():
     try:
         response = client.models.generate_content(
-            model="gemini-2.5-pro",
+            model="gemini-2.5-flash",
             contents="Generate a new randomized CAA Numeracy question.",
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT,
@@ -79,7 +81,7 @@ with col1:
         )
 
         user_input = st.text_input(
-            "Your Answer:", key="user_ans", placeholder="Type your number..."
+            "Your Answer:", key="user_ans", placeholder="Type your answer here..."
         )
 
         if st.button("Check Answer") and user_input:
@@ -89,13 +91,14 @@ with col1:
             Target Answer: {sc.get('expected_answer')}
             Student Answer: {user_input}
 
-            Evaluate if the student is correct or within rounding tolerance. 
-            Be encouraging. Output a 1-sentence verdict followed by the working.
+            Evaluate if the student is mathematically correct or within reasonable rounding tolerance.
+            Important: In all arithmetic working, use standard school symbols: "×" for multiplication and "÷" for division. Never use programming symbols like "*" or "/".
+            Be encouraging. Output a 1-sentence verdict followed by the step-by-step calculation.
             """
             eval_res = client.models.generate_content(
-                model="gemini-2.5-pro", contents=verify_prompt
+                model="gemini-2.5-flash", contents=verify_prompt
             )
-            st.write(eval_res.text)
+            st.success(eval_res.text)
 
 with col2:
     st.markdown("### 🤖 AI Step-by-Step Guide")
