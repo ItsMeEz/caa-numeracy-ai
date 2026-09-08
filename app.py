@@ -5,10 +5,8 @@ import streamlit as st
 from google import genai
 from google.genai import types
 
-# Page setup for clean embedding in Google Sites
 st.set_page_config(page_title="CAA Quest: 30-Min Mastery", layout="wide")
 
-# Read API key securely from Streamlit Secrets
 api_key = os.environ.get("GEMINI_API_KEY")
 if not api_key:
     st.error("Missing GEMINI_API_KEY in Streamlit Secrets.")
@@ -16,7 +14,7 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# ----------------- SESSION PERSISTENCE & TRACKING -----------------
+# ----------------- SESSION PERSISTENCE -----------------
 if "xp" not in st.session_state:
     st.session_state.xp = 0
 if "streak" not in st.session_state:
@@ -29,6 +27,8 @@ if "mistake_history" not in st.session_state:
     st.session_state.mistake_history = []
 if "scenario" not in st.session_state:
     st.session_state.scenario = None
+if "next_prefetched_scenario" not in st.session_state:
+    st.session_state.next_prefetched_scenario = None
 if "hint_level" not in st.session_state:
     st.session_state.hint_level = 0
 if "feedback" not in st.session_state:
@@ -43,7 +43,7 @@ if "chat_messages" not in st.session_state:
         }
     ]
 
-# ----------------- FLASHCARDS WITH BOLD EQUATIONS -----------------
+# ----------------- FLASHCARDS -----------------
 LESSONS = {
     "Percentages & Traps": """
     ### 📓 COPY INTO YOUR NOTEBOOK:
@@ -78,7 +78,7 @@ LESSONS = {
     """,
 }
 
-# ----------------- ADAPTIVE AI PROMPT -----------------
+# ----------------- SYSTEM PROMPT -----------------
 SYSTEM_PROMPT = """
 You are an adaptive AI examiner for the NCEA Numeracy CAA (Unit Standard 32406).
 Generate authentic Level 4/5 questions matching the 2026 examination paper.
@@ -87,68 +87,74 @@ IMPORTANT INSTRUCTIONS:
 1. EQUATION FORMATTING:
    - EVERY equation, arithmetic formula, and calculation MUST BE IN BOLD (e.g. **15 × 1,000 = 15,000**, **15,000 ÷ 60 = 250 m**).
    - Use standard school symbols: "×" for multiplication and "÷" for division. NEVER use "*" or "/".
-2. NOTEBOOK HIGHLIGHT:
-   - Create a punchy "notebook_rule" field containing the exact bold equation that the learner must copy into their notebook.
-3. ADAPTABILITY:
-   - If weak topics are provided, make a targeted problem testing that concept with fresh numbers.
+2. STRICT NUMERICAL TARGET:
+   - Always provide an exact clean numeric string or short value in "clean_numeric_target" (e.g. "250", "6.80", "14", "120") if requires_working is false.
+3. NOTEBOOK HIGHLIGHT:
+   - Include a punchy "notebook_rule" with the bold formula the learner must record.
 
 OUTPUT FORMAT:
 Return strictly a valid JSON object with no markdown fences, backticks, or extra commentary:
 {
   "topic": "Topic Name",
-  "is_targeted_weakness": true,
+  "is_targeted_weakness": false,
   "requires_working": false,
-  "scenario_data": "Short table, graph numbers, or frequency context",
-  "question": "Clear, engaging problem text",
-  "plain_english": "1-sentence plain-English breakdown of what to do",
-  "notebook_rule": "The exact bold equation or rule to write down (e.g. **Metres per min = (km/h × 1,000) ÷ 60**)",
+  "clean_numeric_target": "250",
+  "scenario_data": "Short table or context numbers",
+  "question": "Clear problem text",
+  "plain_english": "1-sentence plain-English breakdown",
+  "notebook_rule": "**Metres per min = (km/h × 1,000) ÷ 60**",
   "expected_answer": "Target answer or criteria",
-  "hint_1": "Step 1: Formula or initial conversion with bold equations",
+  "hint_1": "Step 1: Formula with bold equations",
   "hint_2": "Step 2: Arithmetic setup with bold equations",
   "solution": "Full working showing step-by-step arithmetic in BOLD using × and ÷"
 }
 """
 
-
-def generate_adaptive_problem():
-    weaknesses_str = (
-        ", ".join(st.session_state.struggling_topics[-3:])
-        if st.session_state.struggling_topics
-        else "None yet"
-    )
-
+def request_gemini_question():
+    weaknesses_str = ", ".join(st.session_state.struggling_topics[-3:]) if st.session_state.struggling_topics else "None"
     user_prompt = f"""
-    The learner's current weak areas needing repetition: [{weaknesses_str}].
+    Learner weak areas: [{weaknesses_str}].
     Recent errors: {st.session_state.mistake_history[-2:] if st.session_state.mistake_history else 'None'}.
-    
-    If weak areas exist, generate a targeted remediation problem on that skill with new numbers.
-    Otherwise, choose a high-frequency CAA question (Mass/Rates, Speed/Time, Capacity, or Outcome 3 Claims).
-    Ensure all equations and mathematical formulas are strictly in BOLD with '×' and '÷'.
+    Generate one fresh CAA question. Keep equations bolded with '×' and '÷'.
     """
+    for attempt in range(2):
+        try:
+            response = client.models.generate_content(
+                model="gemini-3.6-flash",
+                contents=user_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                    response_mime_type="application/json",
+                ),
+            )
+            return json.loads(response.text)
+        except Exception as e:
+            if attempt == 1:
+                st.warning("⚠️ High server traffic. Retrying smoothly...")
+            time.sleep(1)
+    return None
 
-    try:
-        response = client.models.generate_content(
-            model="gemini-3.6-flash",
-            contents=user_prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                response_mime_type="application/json",
-            ),
-        )
-        st.session_state.scenario = json.loads(response.text)
-        st.session_state.hint_level = 0
-        st.session_state.feedback = None
-    except Exception as e:
-        st.error(f"Error connecting to Gemini: {e}")
+def spawn_question():
+    # Use prefetched question if available for instant load
+    if st.session_state.next_prefetched_scenario:
+        st.session_state.scenario = st.session_state.next_prefetched_scenario
+        st.session_state.next_prefetched_scenario = None
+    else:
+        st.session_state.scenario = request_gemini_question()
+    
+    st.session_state.hint_level = 0
+    st.session_state.feedback = None
 
+# Pre-fetch the initial question
+if st.session_state.scenario is None:
+    spawn_question()
 
-# ----------------- UI / GAMIFICATION BAR -----------------
+# ----------------- UI / GAMIFICATION HUD -----------------
 elapsed_mins = int((time.time() - st.session_state.start_time) / 60)
 mins_left = max(0, 30 - elapsed_mins)
 
 st.markdown("## ⚡ NCEA CAA: Speed-Run Arena")
 
-# HUD Metrics
 hcol1, hcol2, hcol3, hcol4, hcol5 = st.columns(5)
 with hcol1:
     st.metric("⏳ 30-Min Run", f"{mins_left}m left")
@@ -159,26 +165,12 @@ with hcol3:
 with hcol4:
     st.metric("🎯 Problems Solved", st.session_state.solved)
 with hcol5:
-    level = (
-        "👑 Boss"
-        if st.session_state.xp >= 300
-        else (
-            "🥇 Pro"
-            if st.session_state.xp >= 150
-            else (
-                "🥈 Apprentice" if st.session_state.xp >= 60 else "🥉 Cadet"
-            )
-        )
-    )
+    level = "👑 Boss" if st.session_state.xp >= 300 else ("🥇 Pro" if st.session_state.xp >= 150 else ("🥈 Apprentice" if st.session_state.xp >= 60 else "🥉 Cadet"))
     st.metric("🎖️ Rank", level)
 
-# Weakness Radar Tracker
 if st.session_state.struggling_topics:
-    st.info(
-        f"🎯 **AI Adaptation Radar:** Targeting past errors: **{', '.join(set(st.session_state.struggling_topics))}**"
-    )
+    st.info(f"🎯 **AI Adaptation Radar:** Targeting past errors: **{', '.join(set(st.session_state.struggling_topics))}**")
 
-# Lesson Flashcards with bold notebook headers
 with st.expander("📓 View Notebook Formula Sheets (Click to Open)"):
     tab1, tab2, tab3, tab4 = st.tabs(list(LESSONS.keys()))
     for tab, (name, content) in zip([tab1, tab2, tab3, tab4], LESSONS.items()):
@@ -187,12 +179,13 @@ with st.expander("📓 View Notebook Formula Sheets (Click to Open)"):
 
 st.divider()
 
-# ----------------- MAIN LAYOUT: ARENA + CHATBOT -----------------
+# ----------------- MAIN ARENA -----------------
 col_main, col_chat = st.columns([1.3, 1])
 
 with col_main:
-    if st.button("🚀 Spawn Next Challenge") or st.session_state.scenario is None:
-        generate_adaptive_problem()
+    if st.button("🚀 Spawn Next Challenge"):
+        spawn_question()
+        st.rerun()
 
     sc = st.session_state.scenario
     if sc:
@@ -201,25 +194,22 @@ with col_main:
 
         st.caption(f"**Focus Strand:** {sc.get('topic', 'CAA Practice')}")
 
-        # Big Visual Notebook Box for Students
         if sc.get("notebook_rule"):
             st.markdown(
                 f"""
-            <div style="background: rgba(251, 191, 36, 0.15); border: 2px dashed #fbbf24; border-radius: 8px; padding: 12px; margin-bottom: 14px;">
-                <span style="font-weight: 800; color: #fbbf24;">📓 WRITE THIS IN YOUR NOTEBOOK:</span><br>
-                <span style="font-size: 1.05rem; color: #fff;">{sc.get('notebook_rule')}</span>
-            </div>
-            """,
-                unsafe_allow_html=True,
+                <div style="background: rgba(251, 191, 36, 0.15); border: 2px dashed #fbbf24; border-radius: 8px; padding: 10px; margin-bottom: 12px;">
+                    <span style="font-weight: 800; color: #fbbf24;">📓 WRITE THIS IN YOUR NOTEBOOK:</span><br>
+                    <span style="font-size: 1.05rem; color: #fff;">{sc.get('notebook_rule')}</span>
+                </div>
+                """,
+                unsafe_allow_html=True
             )
 
         if sc.get("scenario_data"):
             st.info(f"📊 **Data Context:**\n{sc.get('scenario_data')}")
 
         st.markdown(f"### {sc.get('question')}")
-        st.markdown(
-            f"💡 **In Plain English:** {sc.get('plain_english', '')}"
-        )
+        st.markdown(f"💡 **In Plain English:** {sc.get('plain_english', '')}")
 
         needs_working = sc.get("requires_working", False)
         if needs_working:
@@ -228,40 +218,58 @@ with col_main:
                 "Your Working:",
                 key="ans_area",
                 placeholder="Write your equations or state agree/disagree with numbers...",
-                height=100,
+                height=90
             )
         else:
             st.markdown("⚡ **Quick Strike Answer:**")
             user_input = st.text_input(
                 "Your Answer:",
                 key="ans_input",
-                placeholder="Enter value (e.g. 250 m, $6.80, or 45)",
+                placeholder="Enter value (e.g. 250 m, $6.80, or 45)"
             )
 
         if st.button("🎯 Submit Answer") and user_input:
-            eval_prompt = f"""
-            Scenario Data: {sc.get('scenario_data')}
-            Question: {sc.get('question')}
-            Topic: {sc.get('topic')}
-            Requires Full Working: {needs_working}
-            Target Answer: {sc.get('expected_answer')}
-            Student Input: {user_input}
+            # INSTANT VERIFICATION FOR NUMERIC ANSWERS (No API lag)
+            clean_target = str(sc.get("clean_numeric_target", "")).strip().lower()
+            clean_user = "".join(c for c in user_input if c.isalnum() or c == ".").lower()
 
-            Output strictly JSON:
-            {{
-               "is_correct": true/false,
-               "verdict": "Punchy 1-sentence assessment",
-               "working": "Clear step-by-step arithmetic with ALL EQUATIONS IN BOLD using '×' and '÷'"
-            }}
-            """
-            eval_res = client.models.generate_content(
-                model="gemini-3.6-flash",
-                contents=eval_prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json"
-                ),
-            )
-            res_data = json.loads(eval_res.text)
+            if not needs_working and clean_target and (clean_target in clean_user or clean_user in clean_target):
+                # Instant local verification in 0.01 seconds
+                res_data = {
+                    "is_correct": True,
+                    "verdict": "Fast and Accurate!",
+                    "working": sc.get("solution", "")
+                }
+            else:
+                # LLM check for open-ended Outcome 3 claims or nuanced formats
+                eval_prompt = f"""
+                Scenario Data: {sc.get('scenario_data')}
+                Question: {sc.get('question')}
+                Requires Full Working: {needs_working}
+                Target Answer: {sc.get('expected_answer')}
+                Student Input: {user_input}
+
+                Output strictly JSON:
+                {{
+                   "is_correct": true/false,
+                   "verdict": "Punchy 1-sentence assessment",
+                   "working": "Clear step-by-step arithmetic with ALL EQUATIONS IN BOLD using '×' and '÷'"
+                }}
+                """
+                try:
+                    eval_res = client.models.generate_content(
+                        model="gemini-3.6-flash",
+                        contents=eval_prompt,
+                        config=types.GenerateContentConfig(response_mime_type="application/json"),
+                    )
+                    res_data = json.loads(eval_res.text)
+                except Exception:
+                    res_data = {
+                        "is_correct": False,
+                        "verdict": "Answer submitted. Check working below:",
+                        "working": sc.get("solution", "")
+                    }
+
             st.session_state.feedback = res_data
 
             if res_data.get("is_correct"):
@@ -281,22 +289,15 @@ with col_main:
                 topic = sc.get("topic")
                 if topic:
                     st.session_state.struggling_topics.append(topic)
-                st.session_state.mistake_history.append(
-                    f"{topic}: Student wrote '{user_input}'"
-                )
+                st.session_state.mistake_history.append(f"{topic}: Student wrote '{user_input}'")
 
         if st.session_state.feedback:
             fb = st.session_state.feedback
             if fb.get("is_correct"):
-                st.success(
-                    f"🎉 **{fb.get('verdict')}**\n\n{fb.get('working')}"
-                )
+                st.success(f"🎉 **{fb.get('verdict')}**\n\n{fb.get('working')}")
             else:
-                st.error(
-                    f"❌ **{fb.get('verdict')}**\n\n**Correct Equations & Working:**\n{fb.get('working')}"
-                )
+                st.error(f"❌ **{fb.get('verdict')}**\n\n**Correct Equations & Working:**\n{fb.get('working')}")
 
-        # Progressive Hints
         with st.expander("💡 Need Step-by-Step Help? (No penalty)"):
             if st.session_state.hint_level >= 1:
                 st.warning(f"**Step 1:** {sc.get('hint_1')}")
@@ -315,40 +316,32 @@ with col_chat:
     st.markdown("### 💬 Ask AI Coach")
     st.caption("Ask questions about equations, formulas, or how to solve steps!")
 
-    chat_box = st.container(height=420)
+    chat_box = st.container(height=400)
     for msg in st.session_state.chat_messages:
         with chat_box.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
     user_query = st.chat_input("Ask: e.g. How do I turn km/h into m/min?")
     if user_query:
-        st.session_state.chat_messages.append(
-            {"role": "user", "content": user_query}
-        )
+        st.session_state.chat_messages.append({"role": "user", "content": user_query})
         with chat_box.chat_message("user"):
             st.markdown(user_query)
 
-        current_q_context = (
-            f"The current problem is: {sc.get('question')} | Data: {sc.get('scenario_data')}"
-            if sc
-            else "General practice"
-        )
+        current_q_context = f"The current problem is: {sc.get('question')} | Data: {sc.get('scenario_data')}" if sc else "General practice"
         tutor_prompt = f"""
-        You are a friendly, encouraging NCEA Numeracy tutor for students with low attention spans.
+        You are an encouraging NCEA Numeracy tutor for students with low attention spans.
         Context: {current_q_context}.
         Student Question: {user_query}
-        
-        RULES:
-        - Format ALL equations, formulas, and numbers in **BOLD**.
-        - Always use '×' and '÷'. Never use '*' or '/'.
-        - Keep answers short, direct (under 3-4 bullet points), and tell them what to write in their notebook.
+        RULES: Format ALL equations in **BOLD**. Always use '×' and '÷'. Keep answers short (under 3 bullets).
         """
-        bot_res = client.models.generate_content(
-            model="gemini-3.6-flash", contents=tutor_prompt
-        )
-        reply = bot_res.text
-        st.session_state.chat_messages.append(
-            {"role": "assistant", "content": reply}
-        )
+        try:
+            bot_res = client.models.generate_content(
+                model="gemini-3.6-flash", contents=tutor_prompt
+            )
+            reply = bot_res.text
+        except Exception:
+            reply = "I am catching my breath! Try that question once more in 5 seconds."
+
+        st.session_state.chat_messages.append({"role": "assistant", "content": reply})
         with chat_box.chat_message("assistant"):
             st.markdown(reply)
