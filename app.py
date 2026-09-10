@@ -1,577 +1,357 @@
-import html
 import json
 import os
-import random
-import re
-import time
 import streamlit as st
+from google import genai
+from google.genai import types
 
-# ---------------------------------------------------------
-# PLATFORM CONFIGURATION & UNIVERSAL THEME LOCK
-# ---------------------------------------------------------
 st.set_page_config(
-    page_title="Apex Numeracy | NCEA CAA Mastery Engine",
-    page_icon="⚡",
+    page_title="NZQA English Examination Machine",
+    page_icon="🏛️",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
+# -----------------------------------------------------------------------------
+# HIGH-CONTRAST PRODUCTION DESIGN SYSTEM
+# -----------------------------------------------------------------------------
 st.markdown(
     """
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
+    * { font-family: 'Plus Jakarta Sans', sans-serif; }
     
-    :root {
-        --hud-bg: #0f172a !important;
-        --card-border: #334155 !important;
-        --gold-bright: #fbbf24 !important;
-        --gold-bg: rgba(251, 191, 36, 0.14) !important;
-        --blue-bright: #38bdf8 !important;
-        --blue-bg: rgba(56, 189, 248, 0.1) !important;
-    }
-
-    * { font-family: 'Plus Jakarta Sans', -apple-system, sans-serif; }
-    .block-container { padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1100px; }
+    .stApp { background-color: #090d16; color: #f1f5f9; }
     
-    /* Universal HUD Card */
     .hud-card {
-        background-color: var(--hud-bg) !important;
-        border: 2px solid var(--card-border) !important;
-        border-radius: 16px !important;
-        padding: 16px 22px !important;
-        margin-bottom: 18px !important;
-        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45) !important;
+        background: linear-gradient(135deg, #0f172a, #1e293b);
+        border: 2px solid #334155;
+        border-radius: 14px;
+        padding: 18px 24px;
+        margin-bottom: 20px;
     }
-    .hud-title {
-        font-size: 1.35rem !important;
-        font-weight: 800 !important;
-        color: #ffffff !important;
-        margin: 0 !important;
-    }
-    .hud-label {
-        font-size: 0.72rem !important;
-        color: #94a3b8 !important;
-        font-weight: 700 !important;
-        letter-spacing: 0.05em !important;
-    }
-    .hud-value {
-        font-size: 1.15rem !important;
-        font-weight: 800 !important;
-    }
+    .hud-metric-label { font-size: 0.72rem; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
+    .hud-metric-val { font-size: 1.25rem; font-weight: 800; color: #38bdf8; }
 
-    /* Notebook Directive Card */
-    .notebook-card {
-        background-color: #1a1608 !important;
-        border: 2px dashed var(--gold-bright) !important;
-        border-left: 6px solid var(--gold-bright) !important;
-        border-radius: 12px !important;
-        padding: 14px 18px !important;
-        margin-bottom: 16px !important;
+    .scenario-card {
+        background: #0d1527;
+        border-left: 6px solid #38bdf8;
+        border-radius: 10px;
+        padding: 18px 22px;
+        margin: 16px 0;
+        font-size: 1.05rem;
+        line-height: 1.6;
     }
-    .notebook-title {
-        color: var(--gold-bright) !important;
-        font-size: 0.85rem !important;
-        font-weight: 800 !important;
-        letter-spacing: 0.08em !important;
-        text-transform: uppercase !important;
-        margin-bottom: 4px !important;
+    
+    .exemplar-box {
+        background: #030712;
+        border: 1px solid #1e293b;
+        border-radius: 8px;
+        padding: 14px 18px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.88rem;
+        line-height: 1.6;
+        color: #cbd5e1;
     }
-    .notebook-rule {
-        color: #ffffff !important;
-        font-size: 1.15rem !important;
-        font-weight: 800 !important;
-        line-height: 1.4 !important;
-    }
-    .notebook-rule strong, .notebook-rule b {
-        color: #fde047 !important;
-        font-weight: 800 !important;
-    }
-
-    /* Scenario / Story Box */
-    .story-box {
-        background-color: #0d1527 !important;
-        border: 1px solid var(--card-border) !important;
-        border-left: 5px solid #38bdf8 !important;
-        border-radius: 12px !important;
-        padding: 18px 22px !important;
-        margin: 14px 0px !important;
-        font-size: 1.05rem !important;
-        color: #f1f5f9 !important;
-        line-height: 1.55 !important;
-    }
-    .story-box strong { color: #38bdf8 !important; font-weight: 800 !important; }
-
-    /* Plain English Summary Tag */
-    .plain-tag {
-        background-color: var(--blue-bg) !important;
-        border: 1px solid rgba(56, 189, 248, 0.4) !important;
-        color: #f0f9ff !important;
-        padding: 10px 16px !important;
-        border-radius: 8px !important;
-        font-size: 0.95rem !important;
-        margin-bottom: 16px !important;
-        line-height: 1.45 !important;
-    }
-    .plain-tag strong { color: var(--blue-bright) !important; }
-
-    /* Question Header */
-    .question-header {
-        font-size: 1.35rem !important;
-        font-weight: 800 !important;
-        color: #ffffff !important;
-        line-height: 1.4 !important;
-        margin: 14px 0 16px 0 !important;
-    }
-    .question-header strong { color: #facc15 !important; font-weight: 800 !important; }
-
-    /* Level Badges */
-    .level-badge {
-        display: inline-block;
-        padding: 4px 12px;
-        border-radius: 6px;
-        font-weight: 800;
-        font-size: 0.8rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        margin-bottom: 8px;
-    }
-    .badge-lvl-1 { background: rgba(34, 197, 94, 0.2); border: 1px solid #22c55e; color: #4ade80; }
-    .badge-lvl-2 { background: rgba(56, 189, 248, 0.2); border: 1px solid #38bdf8; color: #7dd3fc; }
-    .badge-lvl-3 { background: rgba(192, 132, 252, 0.2); border: 1px solid #c084fc; color: #e9d5ff; }
-
-    /* Primary Action Buttons */
-    div.stButton > button {
-        border-radius: 10px !important;
-        font-weight: 800 !important;
-        font-size: 1rem !important;
-        padding: 0.55rem 1.2rem !important;
-        transition: all 0.15s ease-in-out !important;
-    }
+    
+    .grade-badge-e { background: rgba(168, 85, 247, 0.2); border: 2px solid #a855f7; color: #d8b4fe; font-weight: 800; padding: 4px 12px; border-radius: 6px; }
+    .grade-badge-m { background: rgba(56, 189, 248, 0.2); border: 2px solid #38bdf8; color: #7dd3fc; font-weight: 800; padding: 4px 12px; border-radius: 6px; }
+    .grade-badge-a { background: rgba(34, 197, 94, 0.2); border: 2px solid #22c55e; color: #86efac; font-weight: 800; padding: 4px 12px; border-radius: 6px; }
+    .grade-badge-n { background: rgba(239, 68, 68, 0.2); border: 2px solid #ef4444; color: #fca5a5; font-weight: 800; padding: 4px 12px; border-radius: 6px; }
 </style>
 """,
     unsafe_allow_html=True,
 )
 
-# ---------------------------------------------------------
-# OPTIONAL BACKGROUND AI CLIENT (LOADS SAFELY WITHOUT HANGING)
-# ---------------------------------------------------------
+# -----------------------------------------------------------------------------
+# CLIENT & ENVIRONMENT INITIALIZATION
+# -----------------------------------------------------------------------------
 api_key = os.environ.get("GEMINI_API_KEY")
-client = None
-if api_key:
-    try:
-        from google import genai
-        client = genai.Client(api_key=api_key)
-    except Exception:
-        client = None
+if not api_key:
+    st.error("🔑 GEMINI_API_KEY is missing. Please configure it in Streamlit Secrets.")
+    st.stop()
 
-def format_bold_html(text: str) -> str:
-    if not text:
-        return ""
-    text = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", str(text))
-    return text.replace(" * ", " × ").replace(" / ", " ÷ ")
+@st.cache_resource
+def get_ai_client(key: str):
+    return genai.Client(api_key=key)
 
-# ---------------------------------------------------------
-# PROCEDURAL LEVEL 1: FOUNDATION CAA (1-Step)
-# ---------------------------------------------------------
-def gen_lvl1_mass():
-    kg = random.choice([1.2, 1.5, 2.4, 3.5, 4.2])
-    expected = int(kg * 1000)
-    return {
-        "level": 1,
-        "topic": "Mass: Kilograms to Grams",
-        "requires_working": False,
-        "clean_target": str(expected),
-        "story": f"Liam is packing a tramping pack for an overnight trip in Arthur's Pass. His portable camp stove and cookware weigh exactly <strong>{kg} kilograms</strong> in total.",
-        "question": f"What is the total weight of Liam's cooking gear in <strong>grams</strong>?",
-        "plain_english": "Multiply the kilograms by 1,000 to convert to grams.",
-        "notebook_rule": "<strong>Grams = Kilograms × 1,000</strong>",
-        "expected_answer": f"{expected} g",
-        "hint_1": "Step 1: Remember that 1 kg = 1,000 grams.",
-        "hint_2": f"Step 2: Calculate <strong>{kg} × 1,000</strong>.",
-        "solution": f"Calculation: <strong>{kg} × 1,000 = {expected} grams</strong>.",
+client = get_ai_client(api_key)
+
+# -----------------------------------------------------------------------------
+# BENCHMARK EXEMPLAR DATASET (NZQA STANDARDS AS91099 & AS91098)
+# -----------------------------------------------------------------------------
+EXEMPLAR_BANK = {
+    "AS91099: V for Vendetta": {
+        "formula": "TAKO (Intro) + SERQEL (Body)",
+        "rubric": {
+            "Achieved": "Describes visual techniques (lighting, camera work) and straightforwardly explains the director's purpose.",
+            "Merit": "Convincingly analyses how visual/oral techniques work together to highlight consequences of state control and fear.",
+            "Excellence": "Perceptively evaluates how McTeigue uses dystopian conventions to challenge contemporary real-world authoritarianism and human passivity."
+        },
+        "scenarios": [
+            "Analyse how visual techniques create an atmosphere of dread to reinforce an important warning.",
+            "Analyse how a character's transformation conveys the director's central philosophical message.",
+            "Analyse how the director portrays the conflict between individual autonomy and state surveillance."
+        ]
+    },
+    "AS91098: Harrison Bergeron": {
+        "formula": "TAKO (Intro) + SWEETS (Body)",
+        "rubric": {
+            "Achieved": "Identifies key literary techniques (symbolism of handicaps, satire) and straightforwardly describes their meaning.",
+            "Merit": "Convincingly analyses how Vonnegut's satire exposes the dangers of state-mandated conformity and suppressed intellect.",
+            "Excellence": "Perceptively discusses how the text serves as a timeless warning against confusing equal opportunity with forced equality of outcome."
+        },
+        "scenarios": [
+            "Analyse how symbolism is used to communicate a warning about the future of society.",
+            "Analyse how the author uses satire to critique a commonly accepted societal value.",
+            "Analyse how an extreme conflict highlights the consequences of institutional oppression."
+        ]
     }
-
-def gen_lvl1_capacity():
-    ml = random.choice([2500, 3200, 4500, 1800, 5500])
-    expected = ml / 1000
-    return {
-        "level": 1,
-        "topic": "Capacity: mL to Litres",
-        "requires_working": False,
-        "clean_target": f"{expected:g}",
-        "story": f"During rugby practice, the team manager fills a heavy-duty insulated water container with <strong>{ml} millilitres</strong> of cold water for the bench players.",
-        "question": f"How many <strong>Litres</strong> of water are in the container?",
-        "plain_english": "Divide the millilitres by 1,000 to find the answer in Litres.",
-        "notebook_rule": "<strong>Litres = Millilitres ÷ 1,000</strong>",
-        "expected_answer": f"{expected:g} L",
-        "hint_1": "Step 1: Remember that 1,000 mL = 1 Litre.",
-        "hint_2": f"Step 2: Calculate <strong>{ml} ÷ 1,000</strong>.",
-        "solution": f"Calculation: <strong>{ml} ÷ 1,000 = {expected:g} Litres</strong>.",
-    }
-
-# ---------------------------------------------------------
-# PROCEDURAL LEVEL 2: APPLIED MULTI-STEP (Stories & Budgets)
-# ---------------------------------------------------------
-def gen_lvl2_supermarket_story():
-    sausages_kg = random.choice([3, 4, 5])
-    chicken_kg = random.choice([2, 2.5, 3.5])
-    s_cost = sausages_kg * 11
-    c_cost = chicken_kg * 9
-    total_spent = s_cost + c_cost
-    expected = int(100 - total_spent)
-    
-    events = [
-        "organising a community barbecue for their local touch rugby club",
-        "shopping at the local supermarket for a Sunday family gathering",
-        "preparing a sausage sizzle fundraiser outside the hardware store"
-    ]
-    selected_event = random.choice(events)
-
-    return {
-        "level": 2,
-        "topic": "Rates & Supermarket Budgeting",
-        "requires_working": False,
-        "clean_target": str(expected),
-        "story": f"Aroha is {selected_event}. Her committee gave her a single <strong>$100 note</strong> to buy meat. At the butchery, pre-packed sausages cost <strong>$11 per kg</strong> (she grabs <strong>{sausages_kg} kg</strong>) and chicken drumsticks cost <strong>$9 per kg</strong> (she grabs <strong>{chicken_kg} kg</strong>).",
-        "question": "About how many dollars in change does Aroha have left over from her $100 note after paying?",
-        "plain_english": "Work out the cost of sausages, add the cost of chicken, and subtract that total from $100.",
-        "notebook_rule": "<strong>Change = Budget - [(kg₁ × $/kg₁) + (kg₂ × $/kg₂)]</strong>",
-        "expected_answer": f"${expected}",
-        "hint_1": f"Step 1: Sausages = <strong>{sausages_kg} × $11 = ${s_cost}</strong>. Chicken = <strong>{chicken_kg} × $9 = ${c_cost}</strong>.",
-        "hint_2": f"Step 2: Total cost = <strong>${s_cost} + ${c_cost} = ${total_spent}</strong>.",
-        "solution": f"Sausages: <strong>{sausages_kg} × $11 = ${s_cost}</strong>.<br>Chicken: <strong>{chicken_kg} × $9 = ${c_cost}</strong>.<br>Total spent: <strong>${total_spent}</strong>.<br>Change from $100: <strong>$100 - ${total_spent} = ${expected}</strong>.",
-    }
-
-def gen_lvl2_speed_story():
-    speed = random.choice([15, 18, 24, 30, 36, 45, 60])
-    expected = (speed * 1000) // 60
-    return {
-        "level": 2,
-        "topic": "Speed & Unit Rates (km/h to m/min)",
-        "requires_working": False,
-        "clean_target": str(expected),
-        "story": f"Tane commutes to his polytechnic course every morning on an electric scooter. His dashboard speedometer shows he is maintaining a steady speed of <strong>{speed} km/h</strong> along the city cycle path.",
-        "question": f"At this steady speed, how many <strong>metres</strong> does Tane travel forward in <strong>one single minute</strong>?",
-        "plain_english": "Multiply by 1,000 to convert to metres per hour, then divide by 60 minutes for 1 minute.",
-        "notebook_rule": "<strong>Metres per min = (Speed in km/h × 1,000) ÷ 60</strong>",
-        "expected_answer": f"{expected} metres",
-        "hint_1": f"Step 1: Metres in 1 hour: <strong>{speed} × 1,000 = {speed * 1000} m</strong>.",
-        "hint_2": f"Step 2: Divide by 60: <strong>{speed * 1000} ÷ 60</strong>.",
-        "solution": f"Distance in 1 hour: <strong>{speed} × 1,000 = {speed * 1000} m</strong>.<br>Distance in 1 minute: <strong>{speed * 1000} ÷ 60 = {expected} metres</strong>.",
-    }
-
-# ---------------------------------------------------------
-# PROCEDURAL LEVEL 3: EXAM BOSS (Outcome 3 Claims)
-# ---------------------------------------------------------
-def gen_lvl3_claim_discount_story():
-    normal_price = random.choice([80, 100, 120, 150])
-    two_pairs_regular = normal_price * 2
-    deal_total = normal_price + (normal_price // 2)
-    savings = two_pairs_regular - deal_total
-    pct_save = int((savings / two_pairs_regular) * 100)
-    return {
-        "level": 3,
-        "topic": "Outcome 3 Claims (Agree / Disagree)",
-        "requires_working": True,
-        "clean_target": "disagree",
-        "story": f"A sports shoe retailer launches a back-to-school sale: <em>'Buy one pair of basketball boots for <strong>${normal_price}</strong>, get a second identical pair for <strong>half price</strong>.'</em>",
-        "question": "A student customer tells his friends: 'Because the second pair is 50% off, we are saving 50% on our whole purchase.' Do you agree or disagree? Justify your decision using exact numbers.",
-        "plain_english": "Calculate what two pairs normally cost, what you actually pay with the deal, and find the real percentage saved.",
-        "notebook_rule": "<strong>Actual Saving % = (Total Dollars Saved ÷ Total Original Price) × 100</strong>",
-        "expected_answer": f"Disagree: Actual saving is {pct_save}%, not 50%.",
-        "hint_1": f"Step 1: Normal cost of 2 pairs: <strong>${normal_price} × 2 = ${two_pairs_regular}</strong>.",
-        "hint_2": f"Step 2: You pay <strong>${normal_price} + ${normal_price // 2} = ${deal_total}</strong>. Saved = <strong>${savings}</strong>.",
-        "solution": f"<strong>I Disagree.</strong><br>Regular price: <strong>${normal_price} × 2 = ${two_pairs_regular}</strong>.<br>Deal price: <strong>${normal_price} + ${normal_price // 2} = ${deal_total}</strong>.<br>Total saved: <strong>${savings}</strong>.<br>Actual saving: <strong>(${savings} ÷ ${two_pairs_regular}) × 100 = {pct_save}%</strong>, which is NOT 50%.",
-    }
-
-def gen_lvl3_data_frequency_story():
-    return {
-        "level": 3,
-        "topic": "Outcome 3: Frequency Distribution Claim",
-        "requires_working": True,
-        "clean_target": "agree",
-        "story": "A cycle safety organisation tested the durability of 100 bike helmets during impact trials: <strong>41 helmets</strong> suffered damage before 18 months of simulated use; <strong>59 helmets</strong> showed zero cracks and lasted 18 months or longer.",
-        "question": "The safety inspector claims: 'More than half of the tested helmets lasted 18 months or longer.' Do you agree or disagree? Explain using numbers.",
-        "plain_english": "Check whether 59 out of 100 helmets is strictly greater than half (50%).",
-        "notebook_rule": "<strong>Comparison Rule: Always state your position and cite exact numerical evidence.</strong>",
-        "expected_answer": "Agree: 59 out of 100 is 59%, which is greater than half (50).",
-        "hint_1": "Step 1: Half of 100 helmets is exactly <strong>50 helmets (50%)</strong>.",
-        "hint_2": "Step 2: Compare 59 helmets to 50 helmets.",
-        "solution": "<strong>I Agree.</strong> Half of the sample of 100 helmets is <strong>50 helmets (50%)</strong>.<br>The trial data shows <strong>59 helmets</strong> lasted 18 months or more, and <strong>59 is greater than 50</strong>.",
-    }
-
-LEVEL_1_POOL = [gen_lvl1_mass, gen_lvl1_capacity]
-LEVEL_2_POOL = [gen_lvl2_supermarket_story, gen_lvl2_speed_story]
-LEVEL_3_POOL = [gen_lvl3_claim_discount_story, gen_lvl3_data_frequency_story]
-
-# ---------------------------------------------------------
-# SESSION STATE HYDRATION
-# ---------------------------------------------------------
-DEFAULTS = {
-    "xp": 0,
-    "streak": 0,
-    "solved": 0,
-    "current_level": 1,
-    "consecutive_at_level": 0,
-    "session_start": time.time(),
-    "scenario": None,
-    "feedback": None,
-    "hint_level": 0,
-    "q_counter": 1,  # Used to uniquely clear the input field on new questions
 }
 
-for key, default_val in DEFAULTS.items():
-    if key not in st.session_state:
-        st.session_state[key] = default_val
+# -----------------------------------------------------------------------------
+# SESSION PERSISTENCE & LEARNER PROFILE
+# -----------------------------------------------------------------------------
+DEFAULTS = {
+    "standard": "AS91099: V for Vendetta",
+    "active_scenario": None,
+    "scaffold_mode": "Guided Scaffold (Cloze)",
+    "evaluation_history": [],
+    "mastery_score": 50,
+    "last_eval": None
+}
 
-def dispatch_next_challenge():
-    st.session_state.q_counter += 1
-    lvl = st.session_state.current_level
-    if lvl == 1:
-        engine = random.choice(LEVEL_1_POOL)
-    elif lvl == 2:
-        engine = random.choice(LEVEL_2_POOL)
-    else:
-        engine = random.choice(LEVEL_3_POOL)
+for k, v in DEFAULTS.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
-    st.session_state.scenario = engine()
-    st.session_state.hint_level = 0
-    st.session_state.feedback = None
+# -----------------------------------------------------------------------------
+# SIDEBAR: MACHINE CONFIGURATION & PERFORMANCE TRACKER
+# -----------------------------------------------------------------------------
+with st.sidebar:
+    st.markdown("### 🎛️ Engine Configuration")
+    chosen_std = st.selectbox("Active NZQA Standard:", list(EXEMPLAR_BANK.keys()))
+    if chosen_std != st.session_state.standard:
+        st.session_state.standard = chosen_std
+        st.session_state.active_scenario = None
+        st.rerun()
 
-if st.session_state.scenario is None:
-    dispatch_next_challenge()
+    st.session_state.scaffold_mode = st.radio(
+        "Scaffolding Level:",
+        ["Guided Scaffold (Cloze)", "Open Essay Examination"]
+    )
+    
+    st.divider()
+    st.markdown("### 📈 Neural Progress Matrix")
+    st.metric("Learner Mastery Rating", f"{st.session_state.mastery_score} / 100")
+    
+    st.markdown("#### Official NZQA Marking Criteria:")
+    rubric_info = EXEMPLAR_BANK[st.session_state.standard]["rubric"]
+    st.markdown(f"**Achieved:** {rubric_info['Achieved']}")
+    st.markdown(f"**Merit:** {rubric_info['Merit']}")
+    st.markdown(f"**Excellence:** {rubric_info['Excellence']}")
 
-# ---------------------------------------------------------
-# UI: TOP PROGRESSION HUD
-# ---------------------------------------------------------
-elapsed_seconds = time.time() - st.session_state.session_start
-mins_remaining = max(0, 30 - int(elapsed_seconds / 60))
+# Pick scenario if not active
+if not st.session_state.active_scenario:
+    st.session_state.active_scenario = EXEMPLAR_BANK[st.session_state.standard]["scenarios"][0]
 
-lvl_name = (
-    "Level 1: Foundation" if st.session_state.current_level == 1
-    else "Level 2: Applied CAA" if st.session_state.current_level == 2
-    else "Level 3: Exam Boss"
-)
-next_tier_progress = f"{st.session_state.consecutive_at_level} / 2 to Rank Up"
+# -----------------------------------------------------------------------------
+# MAIN ARENA
+# -----------------------------------------------------------------------------
+current_std = st.session_state.standard
+std_meta = EXEMPLAR_BANK[current_std]
 
 st.markdown(f"""
 <div class="hud-card">
-    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-            <div class="hud-label" style="color: #38bdf8 !important;">NCEA NUMERACY UNIT STANDARD 32406</div>
-            <div class="hud-title">CAA High-Velocity Arena</div>
+            <div class="hud-metric-label">{current_std}</div>
+            <div style="font-size: 1.5rem; font-weight: 800; color: #fff;">Automated Diagnostic Essay Engine</div>
         </div>
-        <div style="display: flex; gap: 20px; align-items: center;">
-            <div style="text-align: right;">
-                <div class="hud-label">CURRENT DIFFICULTY</div>
-                <div class="hud-value" style="color: #facc15 !important;">{lvl_name}</div>
-            </div>
-            <div style="background: #334155; width: 2px; height: 32px;"></div>
-            <div style="text-align: right;">
-                <div class="hud-label">TIER PROGRESSION</div>
-                <div class="hud-value" style="color: #4ade80 !important;">{next_tier_progress}</div>
-            </div>
-            <div style="background: #334155; width: 2px; height: 32px;"></div>
-            <div style="text-align: right;">
-                <div class="hud-label">STREAK</div>
-                <div class="hud-value" style="color: #fb923c !important;">🔥 {st.session_state.streak}x</div>
-            </div>
-            <div style="background: #334155; width: 2px; height: 32px;"></div>
-            <div style="text-align: right;">
-                <div class="hud-label">TIME LEFT</div>
-                <div class="hud-value" style="color: #38bdf8 !important;">⏳ {mins_remaining}m</div>
-            </div>
+        <div>
+            <div class="hud-metric-label">Structural Formula Required</div>
+            <div class="hud-metric-val">{std_meta['formula']}</div>
         </div>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-# ---------------------------------------------------------
-# HIGH-PRIORITY NOTEBOOK REFERENCE TABLE (Always Visible)
-# ---------------------------------------------------------
-st.markdown("""
-<div style="background-color: #0f172a; border: 2px solid #334155; border-radius: 12px; padding: 16px; margin-bottom: 20px;">
-    <div style="font-size: 0.9rem; font-weight: 800; color: #fbbf24; text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
-        📓 Master Notebook Reference (Formulas & Traps)
-    </div>
-    <div style="overflow-x: auto;">
-        <table style="width: 100%; border-collapse: collapse; font-size: 0.95rem; color: #e2e8f0; text-align: left;">
-            <thead>
-                <tr style="border-bottom: 2px solid #334155; color: #38bdf8;">
-                    <th style="padding: 8px 12px;">Topic Strand</th>
-                    <th style="padding: 8px 12px;">Core Formula to Write Down</th>
-                    <th style="padding: 8px 12px;">Key CAA Exam Trap</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr style="border-bottom: 1px solid #1e293b;">
-                    <td style="padding: 8px 12px; font-weight: 700;">Speed & Time</td>
-                    <td style="padding: 8px 12px;"><strong>Metres per min = (Speed in km/h × 1,000) ÷ 60</strong></td>
-                    <td style="padding: 8px 12px; color: #f87171;">Time is base-60! 2.5 hrs = 2h 30m (150 mins), NEVER 2h 50m.</td>
-                </tr>
-                <tr style="border-bottom: 1px solid #1e293b;">
-                    <td style="padding: 8px 12px; font-weight: 700;">Mass (kg & g)</td>
-                    <td style="padding: 8px 12px;"><strong>kg × 1,000 = grams</strong> | <strong>grams ÷ 1,000 = kg</strong></td>
-                    <td style="padding: 8px 12px; color: #f87171;">Turn grams to kg BEFORE multiplying by $/kg price!</td>
-                </tr>
-                <tr style="border-bottom: 1px solid #1e293b;">
-                    <td style="padding: 8px 12px; font-weight: 700;">Capacity (L & mL)</td>
-                    <td style="padding: 8px 12px;"><strong>1 Litre = 1,000 mL</strong> (Total L = People × mL ÷ 1,000)</td>
-                    <td style="padding: 8px 12px; color: #f87171;">Do not add Litres and mL directly without converting first.</td>
-                </tr>
-                <tr>
-                    <td style="padding: 8px 12px; font-weight: 700;">Outcome 3 Claims</td>
-                    <td style="padding: 8px 12px;"><strong>Discount % = (Dollars Saved ÷ Original Cost) × 100</strong></td>
-                    <td style="padding: 8px 12px; color: #f87171;">"Buy 1 get 2nd half-price" saves 25% on total, NOT 50%!</td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-# ---------------------------------------------------------
-# MAIN WORKSPACE: ACTIVE QUESTION STAGE
-# ---------------------------------------------------------
-current_q = st.session_state.scenario
-badge_class = f"badge-lvl-{current_q.get('level', 1)}"
-
-st.markdown(f"<span class='level-badge {badge_class}'>Level {current_q.get('level')} • {current_q.get('topic')}</span>", unsafe_allow_html=True)
-
-# Copy to Notebook Directive
-if current_q.get("notebook_rule"):
-    formatted_rule = format_bold_html(current_q.get("notebook_rule"))
+# Scenario Selector & Regeneration Row
+col_scene, col_btn = st.columns([3.5, 1])
+with col_scene:
     st.markdown(f"""
-    <div class="notebook-card">
-        <div class="notebook-title">📓 Write This Formula In Your Notebook</div>
-        <div class="notebook-rule">{formatted_rule}</div>
+    <div class="scenario-card">
+        <strong style="color: #38bdf8; text-transform: uppercase; font-size: 0.8rem; display: block; margin-bottom: 4px;">🎯 Targeted Exam Prompt:</strong>
+        {st.session_state.active_scenario}
     </div>
     """, unsafe_allow_html=True)
-
-# Story Scenario Box
-if current_q.get("story"):
-    formatted_story = format_bold_html(current_q.get("story"))
-    st.markdown(f"""
-    <div class="story-box">
-        <strong style="color: #38bdf8; display: block; margin-bottom: 6px;">📖 Context & Story:</strong>
-        {formatted_story}
-    </div>
-    """, unsafe_allow_html=True)
-
-# Problem Question Header
-formatted_question = format_bold_html(current_q.get("question"))
-st.markdown(f"<div class='question-header'>{formatted_question}</div>", unsafe_allow_html=True)
-
-# Plain English Helper
-formatted_plain = format_bold_html(current_q.get("plain_english"))
-st.markdown(f"""
-<div class="plain-tag">
-    <strong>💡 Plain English Guide:</strong> {formatted_plain}
-</div>
-""", unsafe_allow_html=True)
-
-needs_working = current_q.get("requires_working", False)
-
-# Form wraps the input and actions; dynamic key clears answer automatically on question change
-input_key = f"ans_{st.session_state.q_counter}"
-
-with st.form(key="caa_form"):
-    if needs_working:
-        st.markdown("<strong style='color: #ffffff; font-size: 0.95rem;'>✍️ State your Agree/Disagree verdict and justify with numbers:</strong>", unsafe_allow_html=True)
-        user_response = st.text_area(
-            "Student Submission",
-            key=input_key,
-            label_visibility="collapsed",
-            placeholder="e.g. I disagree because normal price is $200 and you save $50, which is 25%...",
-            height=95
+with col_btn:
+    st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
+    if st.button("🎲 Generate Fresh Prompt", use_container_width=True):
+        st.session_state.active_scenario = random.choice(
+            [s for s in std_meta["scenarios"] if s != st.session_state.active_scenario]
         )
-    else:
-        st.markdown("<strong style='color: #ffffff; font-size: 0.95rem;'>⚡ Instant Answer Entry:</strong>", unsafe_allow_html=True)
-        user_response = st.text_input(
-            "Student Submission",
-            key=input_key,
-            label_visibility="collapsed",
-            placeholder="Enter value (e.g. 250, $25, 1200)..."
-        )
+        st.session_state.last_eval = None
+        st.rerun()
 
-    # Action Buttons: Verify Answer and Next Question Side-by-Side
-    btn_col1, btn_col2 = st.columns([1.5, 1])
-    with btn_col1:
-        submit_btn = st.form_submit_button("🚀 Verify Answer", type="primary", use_container_width=True)
-    with btn_col2:
-        skip_btn = st.form_submit_button("🔄 Next Question ❯", use_container_width=True)
+# -----------------------------------------------------------------------------
+# WORKSPACE: GUIDED CLOZE vs. OPEN ESSAY WRITER
+# -----------------------------------------------------------------------------
+st.markdown("### ✍️ Student Submission Workspace")
 
-# Handle Next Question button within form
-if skip_btn:
-    dispatch_next_challenge()
-    st.rerun()
+essay_text = ""
 
-# Handle Answer Verification (Zero AI Token Overhead, Instant 0.00s grading)
-if submit_btn:
-    if not user_response.strip():
-        st.warning("Please enter your answer before verifying.")
-    else:
-        clean_target = str(current_q.get("clean_target", "")).strip().lower()
-        clean_input = re.sub(r"[^\w.]", "", user_response.lower())
-
-        is_valid = False
-        if not needs_working:
-            clean_target_num = re.sub(r"[^\w.]", "", clean_target)
-            if clean_target_num and (clean_target_num in clean_input or clean_input in clean_target_num):
-                is_valid = True
-        else:
-            if clean_target in clean_input:
-                is_valid = True
-
-        if is_valid:
-            st.session_state.streak += 1
-            st.session_state.solved += 1
-            st.session_state.consecutive_at_level += 1
-            earned_xp = (30 * st.session_state.current_level) + (st.session_state.streak * 5)
-            st.session_state.xp += earned_xp
-
-            leveled_up = False
-            if st.session_state.consecutive_at_level >= 2 and st.session_state.current_level < 3:
-                st.session_state.current_level += 1
-                st.session_state.consecutive_at_level = 0
-                leveled_up = True
-                st.balloons()
-
-            st.session_state.feedback = {
-                "status": "correct",
-                "title": f"🎉 LEVEL UP! Promoted to Level {st.session_state.current_level}!" if leveled_up else f"Exceptional Work! (+{earned_xp} XP)",
-                "body": format_bold_html(current_q.get("solution"))
-            }
-        else:
-            st.session_state.streak = 0
-            st.session_state.consecutive_at_level = 0
-            if st.session_state.current_level > 1:
-                st.session_state.current_level -= 1
-
-            st.session_state.feedback = {
-                "status": "incorrect",
-                "title": "Review Required (Reinforcing Concept)",
-                "body": format_bold_html(current_q.get("solution"))
-            }
-
-# Render Feedback Banner
-if st.session_state.feedback:
-    fb = st.session_state.feedback
-    if fb["status"] == "correct":
-        st.success(f"**{fb['title']}**\n\n{fb['body']}")
-    else:
-        st.error(f"**{fb['title']}**\n\n**Correct Working & Equations:**\n\n{fb['body']}")
-
-# Scaffolded Step-by-Step Hints Accordion
-with st.expander("💡 Need Step-by-Step Help?"):
-    if st.session_state.hint_level >= 1:
-        st.info(f"**Step 1:** {format_bold_html(current_q.get('hint_1'))}")
-    if st.session_state.hint_level >= 2:
-        st.info(f"**Step 2:** {format_bold_html(current_q.get('hint_2'))}")
-    if st.session_state.hint_level >= 3:
-        st.success(f"**Full Solution:** {format_bold_html(current_q.get('solution'))}")
+if st.session_state.scaffold_mode == "Guided Scaffold (Cloze)":
+    if "V for Vendetta" in current_std:
+        st.caption("Construct your **TAKO** Intro and **SERQEL** Body Paragraph using the structural blanks below:")
+        col_t1, col_t2 = st.columns(2)
+        with col_t1:
+            tako_t = st.text_input("Title & Director (T & A):", value="In the dystopian film V for Vendetta, directed by James McTeigue,")
+            tako_k = st.text_input("Keywords Linking to Prompt (K):", placeholder="the director explores how fear is used to establish totalitarian control...")
+        with col_t2:
+            tako_o1 = st.text_input("Techniques Outlined (O1):", value="through deliberate chiaroscuro lighting and symbolic costuming.")
+            tako_o2 = st.text_input("Director's Purpose (O2):", placeholder="warning modern viewers that trading freedom for security leads to tyranny.")
+            
+        st.markdown("**SERQEL Body Paragraph:**")
+        serq_s = st.text_input("Statement (S):", value="One primary way McTeigue portrays Norsefire's oppressive control is through visual framing.")
+        serq_er = st.text_input("Evidence & Reference Scene (E & R):", placeholder="In the interrogation sequence inside the fake Larkhill prison cell...")
+        serq_q = st.text_input("Quote / Visual Technique (Q):", placeholder="McTeigue employs high-contrast chiaroscuro lighting and extreme low angles...")
+        serq_el = st.text_area("Effect on Audience & Society Link (E & L):", placeholder="This evokes a feeling of claustrophobia and helplessness in the viewer, illustrating how totalitarian regimes exploit human vulnerability and passive silence...")
         
-    if st.session_state.hint_level < 3:
-        if st.button("Unlock Next Step"):
-            st.session_state.hint_level += 1
-            st.rerun()
+        essay_text = f"{tako_t} {tako_k} {tako_o1} {tako_o2}\n\n{serq_s} {serq_er} {serq_q} {serq_el}"
+        
+    else:
+        st.caption("Construct your **TAKO** Intro and **SWEETS** Body Paragraph using the structural blanks below:")
+        col_w1, col_w2 = st.columns(2)
+        with col_w1:
+            wtako_t = st.text_input("Title & Author (T & A):", value="In the satirical short story 'Harrison Bergeron', written by Kurt Vonnegut,")
+            wtako_k = st.text_input("Keywords Linking to Prompt (K):", placeholder="the text critiques the destructive nature of enforced equality...")
+        with col_w2:
+            wtako_o1 = st.text_input("Techniques Outlined (O1):", value="through the symbolism of physical handicaps and jarring auditory imagery.")
+            wtako_o2 = st.text_input("Author's Warning (O2):", placeholder="warning society that suppressing excellence eliminates genuine individuality.")
+            
+        st.markdown("**SWEETS Body Paragraph:**")
+        sw_s = st.text_input("Statement (S):", value="Vonnegut uses severe physical handicaps to symbolise state oppression.")
+        sw_w = st.text_input("Where in Text (W):", placeholder="In the Bergeron living room as George and Hazel watch the broadcast...")
+        sw_e = st.text_input("Evidence / Quote (E):", placeholder='George carries "forty-seven pounds of birdshot" padlocked around his neck...')
+        sw_ts = st.text_area("Technique Explanation & Society Link (T & S):", placeholder="This auditory imagery and symbolism demonstrate that suppressing critical thought reduces human civilization to the lowest common denominator...")
+        
+        essay_text = f"{wtako_t} {wtako_k} {wtako_o1} {wtako_o2}\n\n{sw_s} {sw_w} {sw_e} {sw_ts}"
+
+    with st.expander("👁️ Review Compiled Output Before Grading"):
+        st.code(essay_text, language="text")
+
+else:
+    st.caption("Write your full essay directly below. Ensure you include an introduction (TAKO) and at least one analytical body paragraph.")
+    essay_text = st.text_area(
+        "Your Essay Response:",
+        height=300,
+        placeholder="Type your response here. Aim for thorough integration of techniques, evidence, and universal societal links..."
+    )
+
+# -----------------------------------------------------------------------------
+# HIGH-PRECISION NZQA GRADING CONTROLLER
+# -----------------------------------------------------------------------------
+if st.button("⚖️ Run Official NZQA Diagnostic Marking", type="primary", use_container_width=True):
+    if len(essay_text.strip()) < 80:
+        st.warning("⚠️ Submission is too brief to mark reliably against Level 1 NZQA standards. Provide a complete paragraph.")
+    else:
+        with st.spinner("🔍 Analysing against NZQA exemplar rubrics and marker benchmarks..."):
+            evaluation_prompt = f"""
+            You are an official NZQA English Marker evaluating a student response for New Zealand NCEA Standard: {current_std}.
+            
+            OFFICIAL EXAM PROMPT:
+            "{st.session_state.active_scenario}"
+            
+            STUDENT SUBMISSION:
+            \"\"\"{essay_text}\"\"\"
+            
+            STANDARDS MATRIX:
+            - Not Achieved (N1 - N2): Lacks understanding of technique, purely plot summary, no coherent structure.
+            - Achieved (A3 - A4): Straightforward identification of techniques (lighting, camera, symbolism, quotes), clear description of purpose.
+            - Merit (M5 - M6): Convincing analysis of HOW visual/written techniques work together. Clear, convincing link to wider human nature / real-world society.
+            - Excellence (E7 - E8): Perceptive, insightful evaluation showing sophisticated understanding of the text's enduring societal critique or universal human condition.
+            
+            REQUIRED STRUCTURAL CRITERIA:
+            - Introduction must follow TAKO (Title, Author/Director, Key words of prompt, Outline of techniques/purpose).
+            - Body must follow SERQEL (Visual) or SWEETS (Written).
+            
+            OUTPUT SPECIFICATION:
+            Return strictly a valid JSON object without markdown formatting, code fences, or extraneous text:
+            {{
+                "grade": "One of: Not Achieved | Achieved | Merit | Excellence",
+                "score_code": "e.g., N2, A4, M6, or E8",
+                "verdict_summary": "One punchy sentence summarising the result.",
+                "tako_check": "Detailed feedback on Title, Author, Key words, and Outline.",
+                "body_check": "Detailed feedback on Techniques, Evidence/Quotes, and Structural Analysis.",
+                "society_link_check": "Detailed evaluation of whether the submission connected to the real world or human condition.",
+                "next_action_step": "The exact step the student must take to advance to the next grade tier."
+            }}
+            """
+            
+            try:
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=evaluation_prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.2
+                    )
+                )
+                
+                result = json.loads(response.text)
+                st.session_state.last_eval = result
+                
+                # Dynamic model learning / score adjustment
+                if "Excellence" in result["grade"]:
+                    st.session_state.mastery_score = min(100, st.session_state.mastery_score + 15)
+                elif "Merit" in result["grade"]:
+                    st.session_state.mastery_score = min(100, st.session_state.mastery_score + 8)
+                elif "Achieved" in result["grade"]:
+                    st.session_state.mastery_score = min(100, st.session_state.mastery_score + 3)
+                else:
+                    st.session_state.mastery_score = max(10, st.session_state.mastery_score - 5)
+                    
+            except Exception as e:
+                st.error(f"Examination Engine Error: {e}")
+
+# -----------------------------------------------------------------------------
+# DIAGNOSTIC FEEDBACK REPORT DISPLAY
+# -----------------------------------------------------------------------------
+if st.session_state.last_eval:
+    ev = st.session_state.last_eval
+    grade = ev.get("grade", "Not Achieved")
+    
+    badge_style = (
+        "grade-badge-e" if "Excellence" in grade
+        else "grade-badge-m" if "Merit" in grade
+        else "grade-badge-a" if "Achieved" in grade
+        else "grade-badge-n"
+    )
+
+    st.markdown("---")
+    st.markdown(f"""
+    <div style="background: #0f172a; border: 2px solid #334155; border-radius: 12px; padding: 20px; margin-top: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <span class="{badge_style}" style="font-size: 1.1rem;">
+                Official Grade: {grade} ({ev.get('score_code', 'N/A')})
+            </span>
+            <span style="color: #94a3b8; font-size: 0.85rem; font-weight: 700;">NZQA Level 1 Calibration</span>
+        </div>
+        <h4 style="color: #fff; margin-top: 4px;">{ev.get('verdict_summary')}</h4>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col_diag1, col_diag2 = st.columns(2)
+    with col_diag1:
+        st.markdown("#### 🏛️ TAKO Structural Diagnosis")
+        st.info(ev.get("tako_check", "No data provided."))
+        
+        st.markdown("#### 🔍 Evidence & Technique Integration")
+        st.info(ev.get("body_check", "No data provided."))
+
+    with col_diag2:
+        st.markdown("#### 🌍 Universal / Societal Link (Merit & Excellence Barrier)")
+        st.info(ev.get("society_link_check", "No data provided."))
+
+        st.markdown("#### 🚀 Target Action Step to Level Up")
+        st.success(ev.get("next_action_step", "No data provided."))
